@@ -1,0 +1,302 @@
+#!/usr/bin/ruby
+
+# This software is public domain and has no express or implied warranty.
+
+def usage(*args)
+	print *args
+	print "\n"
+	print "Set up the firewall on a Linux server. If no services are specified only SSH is allowed. Ping flood protection is enabled unless --drop-ping is specified.\n"
+	print "\n"
+	print "Usage: iptabs.pl [ --help ] [ --enable-tcp SERVICELIST ] [ --enable-udp UDPSERVICELIST ] [ OPTIONS ]\n"
+	print "\n"
+	print "Options:\n"
+	print "--help\n"
+	print "\tDisplay this helpful message.\n"
+	print "--enable-tcp SERVICELIST\n"
+	print "\tSERVICELIST is a comma separated list of services, e.g. \"ssh,www,https,pop3\"\n"
+	print "\tPorts can be specified numerically, e.g. \"80,443\"\n"
+	print "\tRanges of ports can be specified numerically, e.g. \"5500:5599\"\n"
+	print "\tRanges of ports can be combined, e.g. \"5500:5599,6000:6100,8080\"\n"
+	print "--enable-udp UDPSERVICELIST\n"
+	print "\tUDPSERVICELIST works like SERVICELIST above for UDP ports.\n"
+	print "--interface INTERFACE\n"
+	print "\tSpecify an interface for following rules. Use --interface any to specify any interface.\n"
+	print "--sshguard\n"
+	print "\tEnable SSHGuard protection. SSHGuard must be installed.\n"
+	print "--forward\n"
+	print "\tEnable forwarding. Should only be used on a router.\n"
+	print "--drop-ipv6\n"
+	print "\tDrop all IPv6 packets.\n"
+	print "--drop-ping\n"
+	print "\tDrop all ICMP PING packets.\n"
+	print "--no-drop-null\n"
+	print "\tDo not drop all NULL packets.\n"
+	print "--no-drop-fragments\n"
+	print "\tDo not drop all fragments.\n"
+	print "--no-syn-protect\n"
+	print "\tDo not use SYN protection.\n"
+	print "--no-drop-xmas\n"
+	print "\tDo not drop XMAS packets.\n"
+	print "--no-drop-finscans\n"
+	print "\tDo not drop FIN scans.\n"
+	print "--knock DEST:FIRST:SECOND:THIRD:FOURTH\n"
+	print "\tSetup TCP port knocking for the specified service. DEST is the service, and the knock ports are given in order.\n"
+	print "--no-knock-log\n"
+	print "\tDo not log port knock attempts. Use if PSAD is used on the host.\n"
+	print "--dump-to\n"
+	print "\tDump the netfilter commands to the given file instead of executing them.\n"
+	print "--by-spec\n"
+	print "\tAllow the ports, protocol, and network/host specified by the argument string, e.g. 127.0.0.1/32:tcp:22,80,443\n"
+	print "--clear\n"
+	print "\tJust clear the existing firewall rules and exit.\n"
+	print "--trusted-iface IFACE[,IFACEx ...]\n"
+	print "\tMark the interface[s] as trusted, permitting all traffic. Loopback is automatically trusted, so do not add it with this option.\n"
+	print "\n"
+	exit 1
+end
+
+class GlobalData
+	attr_accessor :sshguard
+	attr_accessor :forward
+	attr_accessor :drop_ipv6
+	attr_accessor :drop_ping
+	attr_accessor :no_drop_null
+	attr_accessor :no_drop_fragments
+	attr_accessor :no_syn_protect
+	attr_accessor :no_drop_xmas
+	attr_accessor :no_drop_finscans
+	attr_accessor :clear_only
+	attr_accessor :tcp
+	attr_accessor :udp
+	attr_accessor :trusted_iface
+	attr_accessor :by_spec
+	attr_accessor :knock
+	attr_accessor :interface
+	attr_accessor :dump_to
+
+	def initialize
+		# Booleans
+		@sshguard = false
+		@forward = false
+		@drop_ipv6 = false
+		@drop_ping = false
+		@no_drop_null = false
+		@no_drop_fragments = false
+		@no_syn_protect = false
+		@no_drop_xmas = false
+		@no_drop_finscans = false
+		@clear_only = false
+
+		# Arrays
+		@tcp = Array.new
+		@udp = Array.new
+		@trusted_iface = Array.new
+		@by_spec = Array.new
+		@knock = Array.new
+
+		# Strings
+		@interface = "any"
+		@dump_to = nil
+	end
+end
+
+class Rule
+	def initialize(conf)
+		@config = conf
+		if @config.dump_to
+			@file = File.new @config.dump_to, "w"
+			@file.write "#!/bin/sh\n"
+		end
+		return self
+	end
+
+	def add_ipv4(what)
+		return output "iptables", what
+	end
+
+	def add_ipv6(what)
+		return self if @config.drop_ipv6
+		return output "ip6tables", what
+	end
+
+	def add(what)
+		return add_ipv4(what).add_ipv6(what)
+	end
+
+	def force_ipv6_loopback
+		# Always want loopback for IPv6 even if dropping outside IPv6 packets
+		return self unless @config.drop_ipv6
+		@config.drop_ipv6 = false
+		add_ipv6 "-A INPUT -i lo -j ACCEPT"
+		@config.drop_ipv6 = true
+		return self
+	end
+
+	def service_enable(proto, list)
+		iface, service_string = list.split "#"
+		service_string.split(",").each { |dport|
+			add "-A INPUT #{((!iface[/^any$/]) ? "-i " + iface : "")} -p #{proto} --dport #{dport} -j ACCEPT"
+		}
+	end
+
+	private
+
+	def output(which, what)
+		if @file
+			@file.write which + " " + what + "\n"
+		else
+			system which + " " + what
+		end
+		return self
+	end
+
+end
+
+#-------------#
+# Entry point #
+#-------------#
+
+config = GlobalData.new
+
+while ARGV.size > 0
+	cmd = ARGV.shift
+
+	if cmd[/^--enable-tcp$/]
+		usage "--enable-tcp needs an argument\n" if ARGV.size < 1 || ARGV[0][/^--/]
+		config.tcp.push config.interface + "#" + ARGV.shift
+	elsif cmd[/^--enable-udp$/]
+		usage "--enable-udp needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
+		config.udp.push config.interface + "#" + ARGV.shift
+	elsif cmd[/^--interface$/]
+		usage "--interface needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
+		config.interface = ARGV.shift
+	elsif cmd[/^--sshguard$/]
+		config.sshguard = true
+	elsif cmd[/^--forward$/]
+		config.forward = true
+	elsif cmd[/^--drop-ipv6$/]
+		config.drop_ipv6 = true
+	elsif cmd[/^--drop-ping$/]
+		config.drop_ping = true
+	elsif cmd[/^--no-drop-null$/]
+		config.no_drop_null = true
+	elsif cmd[/^--no-drop-fragments$/]
+		config.no_drop_fragments = true
+	elsif cmd[/^--no-syn-protect$/]
+		config.no_syn_protect = true
+	elsif cmd[/^--no-drop-xmas$/]
+		config.no_drop_xmas = true
+	elsif cmd[/^--no-drop-finscans$/]
+		config.no_drop_finscans = true
+	elsif cmd[/^--knock$/]
+		usage "--knock needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
+		config.knock.push ARGV.shift
+	elsif cmd[/^--no-knock-log$/]
+		config.no_knock_log = true
+	elsif cmd[/^--dump-to$/]
+		usage "--dump-to needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
+		config.dump_to = ARGV.shift
+	elsif cmd[/^--by-spec$/]
+		usage "--by-spec needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
+		config.by_spec.push ARGV.shift
+	elsif cmd[/^--clear$/]
+		config.clear_only = true
+	elsif cmd[/^--trusted-iface$/]
+		usage "--trusted-iface needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
+		config.trusted_iface.push ARGV.shift
+	else
+		usage "Unrecognized option #{cmd}\n\n"
+	end
+end
+
+rule = Rule.new(config)
+
+# Clear existing tables
+rule.add("-F").add("-P INPUT ACCEPT").add("-P OUTPUT ACCEPT")
+
+if config.clear_only
+	exit 0
+end
+
+# Clear out existing tables, unless writing to a dump file
+IO.foreach("|iptables -S") { |line|
+	rule.add("iptables -X #{line[3..-2]}\n").add("iptables -X #{line[3..-2]}\n") if line[/^-N\s/]
+} unless config.dump_to
+
+unless config.no_drop_fragments
+	# IPv4 fragment drop is pretty simple
+	rule.add_ipv4 "-A INPUT -f -j DROP"
+
+	# IPv6 fragment drop is a little more involved
+	["fragfirst", "fragmore", "fraglast"].each { |fragspec|
+		rule.add_ipv6 "ip6tables -A INPUT -m frag --#{fragspec} -j DROP"
+	}
+end
+
+# Trusted interfaces
+config.trusted_iface.unshift "lo"
+config.trusted_iface.each { |iface| rule.add "-A INPUT -i #{iface} -j ACCEPT" }
+rule.force_ipv6_loopback
+
+# Protect from ping floods
+rule.add "-A INPUT -p icmp -m limit --limit 2/second --limit-burst 3 -j ACCEPT" unless config.drop_ping
+
+# SYN Protection
+rule.add("-A INPUT -p tcp ! --syn -m state --state NEW  -m limit --limit 5/m --limit-burst 7 -j LOG --log-level 4 --log-prefix \"Drop Syn\"").add("-A INPUT -p tcp ! --syn -m state --state NEW -j DROP") unless config.no_syn_protect
+
+# XMAS packet scan protection
+rule.add("-A INPUT -p tcp --tcp-flags SYN,FIN SYN,FIN -m limit --limit 5/m --limit-burst 7 -j LOG --log-level 4 --log-prefix \"XMAS Packets\"").add("-A INPUT -p tcp --tcp-flags ALL ALL -j DROP") unless config.no_drop_xmas
+
+# Detect FIN packet scans
+rule.add("-A INPUT -p tcp --tcp-flags FIN,ACK FIN -m limit --limit 5/m --limit-burst 7 -j LOG --log-level 4 --log-prefix \"FIN Packet Scan\"").add("-A INPUT -p tcp --tcp-flags FIN,ACK FIN -j DROP") unless config.no_drop_finscans
+
+# Drop NULL packets
+rule.add("-A INPUT -p tcp --tcp-flags ALL NONE -m limit --limit 5/m --limit-burst 7 -j LOG --log-level 4 --log-prefix \"NULL Packets\"").add("-A INPUT -p tcp --tcp-flags ALL NONE -j DROP") unless config.no_drop_null
+
+# Accept anything we established
+rule.add "-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT"
+
+# Knocking
+config.knock.each { |knockline|
+	endport, first, second, third, fourth = knockline.split ":", knockline
+
+	(2..4).each { |d|
+		rule.add "-N #{endport}-INTO-PHASE#{d}"
+		rule.add "-A #{endport}-INTO-PHASE#{d} -m recent --name #{endport}-PHASE#{d - 1} --remove"
+		rule.add "-A #{endport}-INTO-PHASE#{d} -m recent --name #{endport}-PHASE#{d} --set"
+		rule.add "-A #{endport}-INTO-PHASE#{d} -j LOG --log-prefix \"INTO #{endport}-PHASE#{d}: \"" unless config.no_knock_log
+	}
+
+	rule.add "-A INPUT -m recent --update --name #{endport}-PHASE1"
+
+	rule.add "-A INPUT -p tcp --dport #{first} -m recent --set --name #{endport}-PHASE1"
+
+	rule.add "-A INPUT -p tcp --dport #{second} -m recent --rcheck --name #{endport}-PHASE1 -j #{endport}-INTO-PHASE2"
+	rule.add "-A INPUT -p tcp --dport #{third} -m recent --rcheck --name #{endport}-PHASE2 -j #{endport}-INTO-PHASE3"
+	rule.add "-A INPUT -p tcp --dport #{fourth} -m recent --rcheck --name #{endport}-PHASE3 -j #{endport}-INTO-PHASE4"
+
+	rule.add "-A INPUT -p tcp --syn --dport #{endport} -m recent --rcheck --seconds 5 --name #{endport}-PHASE4 -j LOG --log-prefix \"KNOCK UNLOCK: \"" unless config.no_knock_log
+	rule.add "-A INPUT -p tcp --syn --dport #{endport} -m recent --rcheck --seconds 5 --name #{endport}-PHASE4 -j ACCEPT"
+}
+
+# SSHGuard
+rule.add("-N sshguard").add("-A INPUT -j sshguard") if config.sshguard
+
+# By spec
+old_drop_ipv6, config.drop_ipv6 = config.drop_ipv6, true
+config.by_spec.each { |specline|
+	nh, protocol, ports = specline.split ":"
+	ports.split(",").each { |p| rule.add "-A INPUT -p #{protocol} -s #{nh} --dport #{p} -j ACCEPT" }
+}
+config.drop_ipv6 = old_drop_ipv6
+
+# TCP services
+config.tcp.each { |service| rule.service_enable "tcp", service }
+
+# UDP Sevices
+config.udp.each { |service| rule.service_enable "udp", service }
+
+# Logging for PSAD and drop everything else
+rule.add("-A INPUT -j LOG").add("-A FORWARD -j LOG").add("-A INPUT -j DROP")
+
+exit 0
