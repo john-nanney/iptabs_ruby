@@ -134,9 +134,9 @@ class Rule
 
 	def service_enable(proto, list)
 		iface, service_string = list.split "#"
-		service_string.split(",").each { |dport|
+		service_string.split(",").each do |dport|
 			add "-A INPUT #{((!iface[/^any$/]) ? "-i " + iface : "")} -p #{proto} --dport #{dport} -j ACCEPT"
-		}
+		end
 	end
 
 	private
@@ -219,18 +219,18 @@ if config.clear_only
 end
 
 # Clear out existing tables, unless writing to a dump file
-IO.foreach("|iptables -S") { |line|
+IO.foreach("|iptables -S") do |line|
 	rule.add("iptables -X #{line[3..-2]}\n").add("iptables -X #{line[3..-2]}\n") if line[/^-N\s/]
-} unless config.dump_to
+end unless config.dump_to
 
 unless config.no_drop_fragments
 	# IPv4 fragment drop is pretty simple
 	rule.add_ipv4 "-A INPUT -f -j DROP"
 
 	# IPv6 fragment drop is a little more involved
-	["fragfirst", "fragmore", "fraglast"].each { |fragspec|
+	["fragfirst", "fragmore", "fraglast"].each do |fragspec|
 		rule.add_ipv6 "ip6tables -A INPUT -m frag --#{fragspec} -j DROP"
-	}
+	end
 end
 
 # Trusted interfaces
@@ -257,15 +257,15 @@ rule.add("-A INPUT -p tcp --tcp-flags ALL NONE -m limit --limit 5/m --limit-burs
 rule.add "-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT"
 
 # Knocking
-config.knock.each { |knockline|
+config.knock.each do |knockline|
 	endport, first, second, third, fourth = knockline.split ":", knockline
 
-	(2..4).each { |d|
+	(2..4).each do |d|
 		rule.add "-N #{endport}-INTO-PHASE#{d}"
 		rule.add "-A #{endport}-INTO-PHASE#{d} -m recent --name #{endport}-PHASE#{d - 1} --remove"
 		rule.add "-A #{endport}-INTO-PHASE#{d} -m recent --name #{endport}-PHASE#{d} --set"
 		rule.add "-A #{endport}-INTO-PHASE#{d} -j LOG --log-prefix \"INTO #{endport}-PHASE#{d}: \"" unless config.no_knock_log
-	}
+	end
 
 	rule.add "-A INPUT -m recent --update --name #{endport}-PHASE1"
 
@@ -277,17 +277,17 @@ config.knock.each { |knockline|
 
 	rule.add "-A INPUT -p tcp --syn --dport #{endport} -m recent --rcheck --seconds 5 --name #{endport}-PHASE4 -j LOG --log-prefix \"KNOCK UNLOCK: \"" unless config.no_knock_log
 	rule.add "-A INPUT -p tcp --syn --dport #{endport} -m recent --rcheck --seconds 5 --name #{endport}-PHASE4 -j ACCEPT"
-}
+end
 
 # SSHGuard
 rule.add("-N sshguard").add("-A INPUT -j sshguard") if config.sshguard
 
 # By spec
 old_drop_ipv6, config.drop_ipv6 = config.drop_ipv6, true
-config.by_spec.each { |specline|
+config.by_spec.each do |specline|
 	nh, protocol, ports = specline.split ":"
 	ports.split(",").each { |p| rule.add "-A INPUT -p #{protocol} -s #{nh} --dport #{p} -j ACCEPT" }
-}
+end
 config.drop_ipv6 = old_drop_ipv6
 
 # TCP services
