@@ -51,6 +51,8 @@ def usage(*args)
 	print "\tJust clear the existing firewall rules and exit.\n"
 	print "--trusted-iface IFACE[,IFACEx ...]\n"
 	print "\tMark the interface[s] as trusted, permitting all traffic. Loopback is automatically trusted, so do not add it with this option.\n"
+	print "--drop\n"
+	print "\tSpecify hosts or networks that should be dropped. Use multiple times, with IPv4 or IPv6\n"
 	print "\n"
 	exit 1
 end
@@ -70,6 +72,8 @@ class GlobalData
 	attr_accessor :udp
 	attr_accessor :trusted_iface
 	attr_accessor :by_spec
+	attr_accessor :droplist
+	attr_accessor :drop6list
 	attr_accessor :knock
 	attr_accessor :interface
 	attr_accessor :dump_to
@@ -92,6 +96,8 @@ class GlobalData
 		@udp = Array.new
 		@trusted_iface = Array.new
 		@by_spec = Array.new
+		@droplist = Array.new
+		@drop6list = Array.new
 		@knock = Array.new
 
 		# Strings
@@ -204,6 +210,9 @@ while ARGV.size > 0
 	elsif cmd[/^--trusted-iface$/]
 		usage "--trusted-iface needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
 		config.trusted_iface.push ARGV.shift
+	elsif cmd[/^--drop$/]
+		usage "--drop needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
+		config.droplist.push ARGV.shift
 	else
 		usage "Unrecognized option #{cmd}\n\n"
 	end
@@ -223,13 +232,21 @@ IO.foreach("|iptables -S") do |line|
 	rule.add("iptables -X #{line[3..-2]}\n").add("iptables -X #{line[3..-2]}\n") if line[/^-N\s/]
 end unless config.dump_to
 
+config.droplist.each do |drop|
+    if drop[/:/]
+        rule.add_ipv6 "-A INPUT -s #{drop} -j DROP"
+    else
+        rule.add_ipv4 "-A INPUT -s #{drop} -j DROP"
+    end
+end
+
 unless config.no_drop_fragments
 	# IPv4 fragment drop is pretty simple
 	rule.add_ipv4 "-A INPUT -f -j DROP"
 
 	# IPv6 fragment drop is a little more involved
 	["fragfirst", "fragmore", "fraglast"].each do |fragspec|
-		rule.add_ipv6 "ip6tables -A INPUT -m frag --#{fragspec} -j DROP"
+		rule.add_ipv6 "-A INPUT -m frag --#{fragspec} -j DROP"
 	end
 end
 

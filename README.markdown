@@ -119,6 +119,21 @@ Example of multiple trusted interfaces:
 
 	iptabs --trusted-iface eth1,eth2,eth4
 
+Untrusted Networks/Addresses
+----------------------------
+
+Problematic networks or hosts can be dropped. One host or network may be specified with each invocation. IPv4 and IPv6 are both supported.
+
+For example, some spammer is throwing traffic at the mail server from 192.168.1.1
+
+    iptabs --drop 192.168.1.1/32
+
+Or the spammer controls a whole network
+
+    iptabs --drop 192.168.1.0/24
+
+This is hardly practical for spam blocking, but it is useful in other scenarios.
+
 Enjoy!
 
 About
