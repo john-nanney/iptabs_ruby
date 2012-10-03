@@ -134,6 +134,19 @@ Or the spammer controls a whole network
 
 This is hardly practical for spam blocking, but it is useful in other scenarios.
 
+DOS/DDOS Protection
+-------------------
+
+Not exactly protection, but it might help. Enable with
+
+    iptabs --throttle 20
+
+The number used is the limit per minute for new connections. The burst rate for new connections is four times the specified limit per minute.
+
+    iptabs --est-throttle 40
+
+The number used is the limit per second for established connections. The burst rate for established connections is two times the specified limit per second.
+
 Enjoy!
 
 About

@@ -53,6 +53,10 @@ def usage(*args)
 	print "\tMark the interface[s] as trusted, permitting all traffic. Loopback is automatically trusted, so do not add it with this option.\n"
 	print "--drop\n"
 	print "\tSpecify hosts or networks that should be dropped. Use multiple times, with IPv4 or IPv6\n"
+	print "--throttle NUM\n"
+	print "\tProtect against DOS. NUM is the limit per minute for new connections. Bursts to 4x.\n"
+	print "--est-throttle NUM\n"
+	print "\tProtect against DOS. NUM is the limit per second of established connections. Bursts to 2x.\n"
 	print "\n"
 	exit 1
 end
@@ -77,6 +81,8 @@ class GlobalData
 	attr_accessor :knock
 	attr_accessor :interface
 	attr_accessor :dump_to
+	attr_accessor :dos_protect
+	attr_accessor :dos_conn_protect
 
 	def initialize
 		# Booleans
@@ -140,8 +146,10 @@ class Rule
 
 	def service_enable(proto, list)
 		iface, service_string = list.split "#"
+        dos = ""
+        dos = " -m limit --limit #{@config.dos_protect}/minute --limit-burst #{Integer(@config.dos_protect) * 2}" if @config.dos_protect != nil
 		service_string.split(",").each do |dport|
-			add "-A INPUT #{((!iface[/^any$/]) ? "-i " + iface : "")} -p #{proto} --dport #{dport} -j ACCEPT"
+			add "-A INPUT #{((!iface[/^any$/]) ? "-i " + iface : "")} -p #{proto} --dport #{dport}#{dos} -j ACCEPT"
 		end
 	end
 
@@ -213,6 +221,12 @@ while ARGV.size > 0
 	elsif cmd[/^--drop$/]
 		usage "--drop needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
 		config.droplist.push ARGV.shift
+	elsif cmd[/^--throttle$/]
+		usage "--throttle needs a numeric argument\n" if ARGV.size < 0 || !ARGV[0][/^[0-9]+$/]
+		config.dos_conn_protect = ARGV.shift
+	elsif cmd[/^--est-throttle$/]
+		usage "--est-throttle needs a numeric argument\n" if ARGV.size < 0 || !ARGV[0][/^[0-9]+$/]
+		config.dos_protect = ARGV.shift
 	else
 		usage "Unrecognized option #{cmd}\n\n"
 	end
@@ -270,8 +284,12 @@ rule.add("-A INPUT -p tcp --tcp-flags FIN,ACK FIN -m limit --limit 5/m --limit-b
 # Drop NULL packets
 rule.add("-A INPUT -p tcp --tcp-flags ALL NONE -m limit --limit 5/m --limit-burst 7 -j LOG --log-level 4 --log-prefix \"NULL Packets\"").add("-A INPUT -p tcp --tcp-flags ALL NONE -j DROP") unless config.no_drop_null
 
+# Protect established connections from DOS/DDOS
+dos = ""
+dos = " -m limit --limit #{config.dos_conn_protect}/second --limit-burst #{Integer(config.dos_conn_protect) * 4}" if config.dos_conn_protect != nil
+
 # Accept anything we established
-rule.add "-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT"
+rule.add "-A INPUT -m state --state ESTABLISHED,RELATED#{dos} -j ACCEPT"
 
 # Knocking
 config.knock.each do |knockline|
