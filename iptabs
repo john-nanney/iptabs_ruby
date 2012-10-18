@@ -161,6 +161,15 @@ class Rule
 
 end
 
+def block_badguy(toblock)
+    if toblock[/:/]
+        system "ip6tables -A blacklist -s #{toblock} -j DROP"
+    else
+        system "iptables -A blacklist -s #{toblock} -j DROP"
+    end
+    puts "Blacklisted #{toblock}"
+end
+
 #-------------#
 # Entry point #
 #-------------#
@@ -230,19 +239,22 @@ while ARGV.size > 0
         end
         File.open(ARGV.shift, "r") do |infile|
             while (line = infile.gets)
-                config.blacklist.push line.chomp if line.size > 1 && !line[/^#/]
+                line.chomp.split(/,/).each { |badguy| config.blacklist.push badguy } if line.size > 1 && !line[/^#/]
             end
         end
 	elsif cmd[/^--badguy$/]
 		usage "--badguy needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
-		ARGV.shift.split(/,/).each do |toblock|
-            # Must use system(), the rule object doesn't exist yet
-            if toblock[/:/]
-                system "ip6tables -A blacklist -s #{toblock} -j DROP"
-            else
-                system "iptables -A blacklist -s #{toblock} -j DROP"
+		ARGV.shift.split(/,/).each { |toblock| block_badguy toblock }
+        exit 0
+	elsif cmd[/^--badguy-file$/]
+		usage "--badguy-file needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
+        if !File::exists?(ARGV[0])
+            usage "File #{ARGV[0]} does not exist."
+        end
+        File.open(ARGV.shift, "r") do |infile|
+            while (line = infile.gets)
+                line.chomp.split(/,/).each { |toblock| block_badguy toblock } if line.size > 1 && !line[/^#/]
             end
-            puts "Blacklisted #{toblock}"
         end
         exit 0
 	else

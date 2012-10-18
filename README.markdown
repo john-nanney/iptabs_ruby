@@ -148,6 +148,10 @@ The blacklist chain is dynamic, so it may be modified without recreating the ent
 
 The bad guy option can also take multiple hosts and networks separated by commas. This is for use from some monitoring software that detects bad things, such as a root login attempt on a server that does not allow root to login directly.
 
+A file with a list of addresses and/or networks to block can be specified. The format is the same as for the blacklist file option.
+
+    iptabs --badguy-file list.txt
+
 DOS/DDOS Protection
 -------------------
 
