@@ -46,7 +46,7 @@ def usage(*args)
 	print "--dump-to\n"
 	print "\tDump the netfilter commands to the given file instead of executing them.\n"
 	print "--by-spec\n"
-	print "\tAllow the ports, protocol, and network/host specified by the argument string, e.g. 127.0.0.1/32:tcp:22,80,443\n"
+	print "\tAllow the ports, protocol, and network/host specified by the argument string, e.g. 192.168.1.0/24:tcp:22,80,443,5900-5999\n"
 	print "--clear\n"
 	print "\tJust clear the existing firewall rules and exit.\n"
 	print "--trusted-iface IFACE[,IFACEx ...]\n"
@@ -212,7 +212,8 @@ while ARGV.size > 0
 		config.dump_to = ARGV.shift
 	elsif cmd[/^--by-spec$/]
 		usage "--by-spec needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
-		config.by_spec.push ARGV.shift
+		usage "Specification is incorrect\n" unless ARGV[0][/^[0-9.]+\/[0-9]+:[tu][dc]p:[0-9,-]+$/]
+		config.by_spec.push ARGV.shift.gsub(/:/, ';').gsub(/-/, ':')
 	elsif cmd[/^--clear$/]
 		config.clear_only = true
 	elsif cmd[/^--trusted-iface$/]
@@ -318,12 +319,10 @@ end
 rule.add("-N sshguard").add("-A INPUT -j sshguard") if config.sshguard
 
 # By spec
-old_drop_ipv6, config.drop_ipv6 = config.drop_ipv6, true
 config.by_spec.each do |specline|
-	nh, protocol, ports = specline.split ":"
-	ports.split(",").each { |p| rule.add "-A INPUT -p #{protocol} -s #{nh} --dport #{p} -j ACCEPT" }
+	nh, protocol, ports = specline.split ";"
+	ports.split(",").each { |p| rule.add_ipv4 "-A INPUT -p #{protocol} -s #{nh} --dport #{p} -j ACCEPT" }
 end
-config.drop_ipv6 = old_drop_ipv6
 
 # TCP services
 config.tcp.each { |service| rule.service_enable "tcp", service }
