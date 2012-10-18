@@ -139,15 +139,6 @@ class Rule
 		return add_ipv4(what).add_ipv6(what)
 	end
 
-	def force_ipv6_loopback
-		# Always want loopback for IPv6 even if dropping outside IPv6 packets
-		return self unless @config.drop_ipv6
-		@config.drop_ipv6 = false
-		add_ipv6 "-A INPUT -i lo -j ACCEPT"
-		@config.drop_ipv6 = true
-		return self
-	end
-
 	def service_enable(proto, list)
 		iface, service_string = list.split "#"
         dos = ""
@@ -287,7 +278,6 @@ end
 # Trusted interfaces
 config.trusted_iface.unshift "lo"
 config.trusted_iface.each { |iface| rule.add "-A INPUT -i #{iface} -j ACCEPT" }
-rule.force_ipv6_loopback
 
 rule.add "-N blacklist"
 
