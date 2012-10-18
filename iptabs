@@ -63,6 +63,8 @@ def usage(*args)
 	print "\tBlacklist hosts and/or networks listed in FILENAME\n"
 	print "--badguy SPEC[,SPEC...]\n"
 	print "\tBlock hosts and/or networks with existing firewall. Separate multiples with commas.\n"
+	print "--badguy-file FILENAME\n"
+	print "\tBlock hosts and/or networks from a file, without reloading firewall.\n"
 	print "\n"
 	exit 1
 end
