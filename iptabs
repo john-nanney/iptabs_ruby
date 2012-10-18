@@ -294,6 +294,7 @@ config.trusted_iface.unshift "lo"
 config.trusted_iface.each { |iface| rule.add "-A INPUT -i #{iface} -j ACCEPT" }
 
 rule.add "-N blacklist"
+rule.add "-A INPUT -j blacklist"
 
 config.blacklist.each do |drop|
     if drop[/:/]
