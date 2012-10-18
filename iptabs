@@ -57,6 +57,12 @@ def usage(*args)
 	print "\tProtect against DOS. NUM is the limit per minute for new connections. Bursts to 4x.\n"
 	print "--est-throttle NUM\n"
 	print "\tProtect against DOS. NUM is the limit per second of established connections. Bursts to 2x.\n"
+	print "--blacklist SPEC[,SPEC...]\n"
+	print "\tBlacklist hosts and/or networks. Separate multiples with commas.\n"
+	print "--blacklist-file FILENAME\n"
+	print "\tBlacklist hosts and/or networks listed in FILENAME\n"
+	print "--badguy SPEC[,SPEC...]\n"
+	print "\tBlock hosts and/or networks with existing firewall. Separate multiples with commas.\n"
 	print "\n"
 	exit 1
 end
@@ -76,8 +82,7 @@ class GlobalData
 	attr_accessor :udp
 	attr_accessor :trusted_iface
 	attr_accessor :by_spec
-	attr_accessor :droplist
-	attr_accessor :drop6list
+	attr_accessor :blacklist
 	attr_accessor :knock
 	attr_accessor :interface
 	attr_accessor :dump_to
@@ -102,8 +107,7 @@ class GlobalData
 		@udp = Array.new
 		@trusted_iface = Array.new
 		@by_spec = Array.new
-		@droplist = Array.new
-		@drop6list = Array.new
+		@blacklist = Array.new
 		@knock = Array.new
 
 		# Strings
@@ -219,15 +223,37 @@ while ARGV.size > 0
 	elsif cmd[/^--trusted-iface$/]
 		usage "--trusted-iface needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
 		config.trusted_iface.push ARGV.shift
-	elsif cmd[/^--drop$/]
-		usage "--drop needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
-		config.droplist.push ARGV.shift
 	elsif cmd[/^--throttle$/]
 		usage "--throttle needs a numeric argument\n" if ARGV.size < 0 || !ARGV[0][/^[0-9]+$/]
 		config.dos_conn_protect = ARGV.shift
 	elsif cmd[/^--est-throttle$/]
 		usage "--est-throttle needs a numeric argument\n" if ARGV.size < 0 || !ARGV[0][/^[0-9]+$/]
 		config.dos_protect = ARGV.shift
+	elsif cmd[/^--blacklist$/]
+		usage "--blacklist needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
+		ARGV.shift.split(/,/).each { |toblock| config.blacklist.push toblock }
+	elsif cmd[/^--blacklist-file$/]
+		usage "--blacklist-file needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
+        if !File::exists?(ARGV[0])
+            usage "File #{ARGV[0]} does not exist."
+        end
+        File.open(ARGV.shift, "r") do |infile|
+            while (line = infile.gets)
+                config.blacklist.push line.chomp if line.size > 1 && !line[/^#/]
+            end
+        end
+	elsif cmd[/^--badguy$/]
+		usage "--badguy needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
+		ARGV.shift.split(/,/).each do |toblock|
+            # Must use system(), the rule object doesn't exist yet
+            if toblock[/:/]
+                system "ip6tables -A blacklist -s #{toblock} -j DROP"
+            else
+                system "iptables -A blacklist -s #{toblock} -j DROP"
+            end
+            puts "Blacklisted #{toblock}"
+        end
+        exit 0
 	else
 		usage "Unrecognized option #{cmd}\n\n"
 	end
@@ -237,23 +263,16 @@ rule = Rule.new(config)
 
 # Clear existing tables
 rule.add("-F").add("-P INPUT ACCEPT").add("-P OUTPUT ACCEPT")
+IO.popen("iptables -S") do |f|
+    f.each { |line| rule.add "-X #{line.sub(/^-N\s+/, "").chomp}" if line[/^-N\s+/] }
+end if config.dump_to.nil?
 
-if config.clear_only
-	exit 0
-end
+exit 0 if config.clear_only
 
 # Clear out existing tables, unless writing to a dump file
 IO.foreach("|iptables -S") do |line|
 	rule.add("iptables -X #{line[3..-2]}\n").add("iptables -X #{line[3..-2]}\n") if line[/^-N\s/]
 end unless config.dump_to
-
-config.droplist.each do |drop|
-    if drop[/:/]
-        rule.add_ipv6 "-A INPUT -s #{drop} -j DROP"
-    else
-        rule.add_ipv4 "-A INPUT -s #{drop} -j DROP"
-    end
-end
 
 unless config.no_drop_fragments
 	# IPv4 fragment drop is pretty simple
@@ -269,6 +288,16 @@ end
 config.trusted_iface.unshift "lo"
 config.trusted_iface.each { |iface| rule.add "-A INPUT -i #{iface} -j ACCEPT" }
 rule.force_ipv6_loopback
+
+rule.add "-N blacklist"
+
+config.blacklist.each do |drop|
+    if drop[/:/]
+        rule.add_ipv6 "-A blacklist -s #{drop} -j DROP"
+    else
+        rule.add_ipv4 "-A blacklist -s #{drop} -j DROP"
+    end
+end
 
 # Protect from ping floods
 rule.add "-A INPUT -p icmp -m limit --limit 2/second --limit-burst 3 -j ACCEPT" unless config.drop_ping
