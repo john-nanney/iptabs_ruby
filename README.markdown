@@ -20,7 +20,7 @@ Features
 Invocation
 ----------
 
-Configuration is a single command line invocation. With no arguments, the firewall will allow incoming SSH connections with IPv4 and IPv6, denying all other incoming connections.
+Configuration is a single command line invocation. With no arguments, the firewall will block all incoming connections.
 
 To display a help message:
 
@@ -28,7 +28,7 @@ To display a help message:
 
 To allow SSH over IPv4 and IPv6:
 
-	iptabs
+	iptabs --enable-tcp ssh
 
 By default pings are throttled to protect from flooding. To disable pings completely:
 
@@ -164,6 +164,22 @@ The number used is the limit per minute for new connections. The burst rate for 
     iptabs --est-throttle 40
 
 The number used is the limit per second for established connections. The burst rate for established connections is two times the specified limit per second.
+
+Firewall Files
+--------------
+
+The firewall tool can read firewall commands from a file instead of the command line. Commands can appear with or without the leading dashes (the command line can do this too, try it!). Comments and blank lines are ignored. A comment is a line that starts with a pound sign.
+
+Here is an example firewall file:
+
+    # Web server firewall
+    sshguard
+    enable-tcp 22,80,443
+    blacklist 172.168.0.0/16,10.0.0.0/8
+
+This is equivalent to the command line
+
+    iptabs --sshguard --enable-tcp 22,80,443 --blacklist 172.168.0.0/16,10.0.0.0/8
 
 Enjoy!
 
