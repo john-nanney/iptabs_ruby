@@ -65,6 +65,8 @@ def usage(*args)
 	print "\tBlock hosts and/or networks with existing firewall. Separate multiples with commas.\n"
 	print "--badguy-file FILENAME\n"
 	print "\tBlock hosts and/or networks from a file, without reloading firewall.\n"
+	print "--file FILENAME\n"
+	print "\tRead firewall commands from FILENAME\n"
 	print "\n"
 	exit 1
 end
@@ -172,97 +174,113 @@ def block_badguy(toblock)
     puts "Blacklisted #{toblock}"
 end
 
+def process_arguments(cfg, args)
+    while args.size > 0
+        cmd = args.shift.sub(/^--/, '')
+
+        if cmd[/^enable-tcp$/]
+            usage "option enable-tcp needs an argument\n" if args.size < 1
+            cfg.tcp.push cfg.interface + "#" + args.shift
+        elsif cmd[/^enable-udp$/]
+            usage "option enable-udp needs an argument\n" if args.size < 1
+            cfg.udp.push cfg.interface + "#" + args.shift
+        elsif cmd[/^interface$/]
+            usage "option interface needs an argument\n" if args.size < 1
+            cfg.interface = args.shift
+        elsif cmd[/^sshguard$/]
+            cfg.sshguard = true
+        elsif cmd[/^forward$/]
+            cfg.forward = true
+        elsif cmd[/^drop-ipv6$/]
+            cfg.drop_ipv6 = true
+        elsif cmd[/^drop-ping$/]
+            cfg.drop_ping = true
+        elsif cmd[/^no-drop-null$/]
+            cfg.no_drop_null = true
+        elsif cmd[/^no-drop-fragments$/]
+            cfg.no_drop_fragments = true
+        elsif cmd[/^no-syn-protect$/]
+            cfg.no_syn_protect = true
+        elsif cmd[/^no-drop-xmas$/]
+            cfg.no_drop_xmas = true
+        elsif cmd[/^no-drop-finscans$/]
+            cfg.no_drop_finscans = true
+        elsif cmd[/^knock$/]
+            usage "option knock needs an argument\n" if args.size < 1
+            cfg.knock.push args.shift
+        elsif cmd[/^no-knock-log$/]
+            cfg.no_knock_log = true
+        elsif cmd[/^dump-to$/]
+            usage "option dump-to needs an argument\n" if args.size < 1
+            cfg.dump_to = args.shift
+        elsif cmd[/^by-spec$/]
+            usage "option by-spec needs an argument\n" if args.size < 1
+            usage "Specification is incorrect\n" unless args[0][/^[0-9.]+\/[0-9]+:[tu][dc]p:[0-9,-]+$/]
+            cfg.by_spec.push args.shift.gsub(/:/, ';').gsub(/-/, ':')
+        elsif cmd[/^clear$/]
+            cfg.clear_only = true
+        elsif cmd[/^trusted-iface$/]
+            usage "option trusted-iface needs an argument\n" if args.size < 1
+            cfg.trusted_iface.push args.shift
+        elsif cmd[/^throttle$/]
+            usage "option throttle needs a numeric argument\n" if args.size < 1 || !args[0][/^[0-9]+$/]
+            cfg.dos_conn_protect = args.shift
+        elsif cmd[/^est-throttle$/]
+            usage "option est-throttle needs a numeric argument\n" if args.size < 1 || !args[0][/^[0-9]+$/]
+            cfg.dos_protect = args.shift
+        elsif cmd[/^blacklist$/]
+            usage "option blacklist needs an argument\n" if args.size < 1
+            args.shift.split(/,/).each { |toblock| cfg.blacklist.push toblock }
+        elsif cmd[/^blacklist-file$/]
+            usage "option blacklist-file needs an argument\n" if args.size < 1
+            if !File::exists?(args[0])
+                usage "File #{args[0]} does not exist."
+            end
+            File.open(args.shift, "r") do |infile|
+                while (line = infile.gets)
+                    line.chomp.split(/,/).each { |badguy| cfg.blacklist.push badguy } if line.size > 1 && !line[/^#/]
+                end
+            end
+        elsif cmd[/^badguy$/]
+            usage "option badguy needs an argument\n" if args.size < 1
+            args.shift.split(/,/).each { |toblock| block_badguy toblock }
+            exit 0
+        elsif cmd[/^badguy-file$/]
+            usage "option badguy-file needs an argument\n" if args.size < 1
+            if !File::exists?(args[0])
+                usage "File #{args[0]} does not exist."
+            end
+            File.open(args.shift, "r") do |infile|
+                while (line = infile.gets)
+                    line.chomp.split(/,/).each { |toblock| block_badguy toblock } if line.size > 1 && !line[/^#/]
+                end
+            end
+            exit 0
+        elsif cmd[/^file$/]
+            usage "option file needs an argument\n" if args.size < 1
+            if !File::exists?(args[0])
+                usage "File #{args[0]} does not exist."
+            end
+            fileargs = Array.new
+            File.open(args.shift, "r") do |infile|
+                while (line = infile.gets)
+                    line.chomp.split(/\s+/).each { |to_process| fileargs.push to_process } if line.size > 1 && !line[/^#/]
+                end
+            end
+            process_arguments cfg, fileargs
+        else
+            usage "Unrecognized option #{cmd}\n\n"
+        end
+    end
+end
+
 #-------------#
 # Entry point #
 #-------------#
 
 config = GlobalData.new
 
-while ARGV.size > 0
-	cmd = ARGV.shift
-
-	if cmd[/^--enable-tcp$/]
-		usage "--enable-tcp needs an argument\n" if ARGV.size < 1 || ARGV[0][/^--/]
-		config.tcp.push config.interface + "#" + ARGV.shift
-	elsif cmd[/^--enable-udp$/]
-		usage "--enable-udp needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
-		config.udp.push config.interface + "#" + ARGV.shift
-	elsif cmd[/^--interface$/]
-		usage "--interface needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
-		config.interface = ARGV.shift
-	elsif cmd[/^--sshguard$/]
-		config.sshguard = true
-	elsif cmd[/^--forward$/]
-		config.forward = true
-	elsif cmd[/^--drop-ipv6$/]
-		config.drop_ipv6 = true
-	elsif cmd[/^--drop-ping$/]
-		config.drop_ping = true
-	elsif cmd[/^--no-drop-null$/]
-		config.no_drop_null = true
-	elsif cmd[/^--no-drop-fragments$/]
-		config.no_drop_fragments = true
-	elsif cmd[/^--no-syn-protect$/]
-		config.no_syn_protect = true
-	elsif cmd[/^--no-drop-xmas$/]
-		config.no_drop_xmas = true
-	elsif cmd[/^--no-drop-finscans$/]
-		config.no_drop_finscans = true
-	elsif cmd[/^--knock$/]
-		usage "--knock needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
-		config.knock.push ARGV.shift
-	elsif cmd[/^--no-knock-log$/]
-		config.no_knock_log = true
-	elsif cmd[/^--dump-to$/]
-		usage "--dump-to needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
-		config.dump_to = ARGV.shift
-	elsif cmd[/^--by-spec$/]
-		usage "--by-spec needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
-		usage "Specification is incorrect\n" unless ARGV[0][/^[0-9.]+\/[0-9]+:[tu][dc]p:[0-9,-]+$/]
-		config.by_spec.push ARGV.shift.gsub(/:/, ';').gsub(/-/, ':')
-	elsif cmd[/^--clear$/]
-		config.clear_only = true
-	elsif cmd[/^--trusted-iface$/]
-		usage "--trusted-iface needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
-		config.trusted_iface.push ARGV.shift
-	elsif cmd[/^--throttle$/]
-		usage "--throttle needs a numeric argument\n" if ARGV.size < 0 || !ARGV[0][/^[0-9]+$/]
-		config.dos_conn_protect = ARGV.shift
-	elsif cmd[/^--est-throttle$/]
-		usage "--est-throttle needs a numeric argument\n" if ARGV.size < 0 || !ARGV[0][/^[0-9]+$/]
-		config.dos_protect = ARGV.shift
-	elsif cmd[/^--blacklist$/]
-		usage "--blacklist needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
-		ARGV.shift.split(/,/).each { |toblock| config.blacklist.push toblock }
-	elsif cmd[/^--blacklist-file$/]
-		usage "--blacklist-file needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
-        if !File::exists?(ARGV[0])
-            usage "File #{ARGV[0]} does not exist."
-        end
-        File.open(ARGV.shift, "r") do |infile|
-            while (line = infile.gets)
-                line.chomp.split(/,/).each { |badguy| config.blacklist.push badguy } if line.size > 1 && !line[/^#/]
-            end
-        end
-	elsif cmd[/^--badguy$/]
-		usage "--badguy needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
-		ARGV.shift.split(/,/).each { |toblock| block_badguy toblock }
-        exit 0
-	elsif cmd[/^--badguy-file$/]
-		usage "--badguy-file needs an argument\n" if ARGV.size < 0 || ARGV[0][/^--/]
-        if !File::exists?(ARGV[0])
-            usage "File #{ARGV[0]} does not exist."
-        end
-        File.open(ARGV.shift, "r") do |infile|
-            while (line = infile.gets)
-                line.chomp.split(/,/).each { |toblock| block_badguy toblock } if line.size > 1 && !line[/^#/]
-            end
-        end
-        exit 0
-	else
-		usage "Unrecognized option #{cmd}\n\n"
-	end
-end
+process_arguments config, ARGV
 
 rule = Rule.new(config)
 
