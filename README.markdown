@@ -122,17 +122,31 @@ Example of multiple trusted interfaces:
 Untrusted Networks/Addresses
 ----------------------------
 
-Problematic networks or hosts can be dropped. One host or network may be specified with each invocation. IPv4 and IPv6 are both supported.
+Problematic networks or hosts can be blacklisted. Multiple hosts or networks may be specified with each invocation. IPv4 and IPv6 are both supported.
 
 For example, some spammer is throwing traffic at the mail server from 192.168.1.1
 
-    iptabs --drop 192.168.1.1/32
+    iptabs --blacklist 192.168.1.1/32
 
 Or the spammer controls a whole network
 
-    iptabs --drop 192.168.1.0/24
+    iptabs --blacklist 192.168.1.0/24
+
+To block multiple combinations of hosts and networks use commas
+
+    iptabs --blacklist 192.168.1.2/32,192.168.2.0/24,10.0.0.0/8
+
+The black list may be stored in a file, one per line, in CIDR notation as above. The file may have blank lines or comments. Comments are any line starting with a pound sign.
+
+    iptabs --blacklist-file blacklist.txt
 
 This is hardly practical for spam blocking, but it is useful in other scenarios.
+
+The blacklist chain is dynamic, so it may be modified without recreating the entire firewall. To easily add a host or network
+
+    iptabs --badguy 192.168.1.5/32
+
+The bad guy option can also take multiple hosts and networks separated by commas. This is for use from some monitoring software that detects bad things, such as a root login attempt on a server that does not allow root to login directly.
 
 DOS/DDOS Protection
 -------------------
