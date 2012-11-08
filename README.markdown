@@ -68,6 +68,12 @@ If SSHGuard is installed, enable support for it:
 
 	iptabs --sshguard
 
+If fwknop server support is desired on the server, enable it:
+
+	iptabs --fwknop
+
+Note that using fwknop as a client requires no special support.
+
 By default SYN protection is enabled, XMAS packets are dropped, NULL packets are dropped, and FIN scans are logged for programs like PSAD. Any of these can be optionally disabled.
 
 To dump the netfilter commands to a file:
