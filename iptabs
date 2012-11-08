@@ -371,7 +371,7 @@ config.knock.each do |knockline|
 end
 
 # SSHGuard
-rule.add("-N sshguard").add("-A INPUT -j sshguard") if config.sshguard
+rule.add("-N sshguard").add("-A INPUT -j sshguard").add("-A OUTPUT -j sshguard") if config.sshguard
 
 # By spec
 config.by_spec.each do |specline|
