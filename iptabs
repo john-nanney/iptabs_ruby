@@ -88,6 +88,7 @@ class GlobalData
 	attr_accessor :by_spec
 	attr_accessor :blacklist
 	attr_accessor :knock
+	attr_accessor :no_knock_log
 	attr_accessor :interface
 	attr_accessor :dump_to
 	attr_accessor :dos_protect
@@ -105,6 +106,7 @@ class GlobalData
 		@no_drop_xmas = false
 		@no_drop_finscans = false
 		@clear_only = false
+		@no_knock_log = false
 
 		# Arrays
 		@tcp = Array.new
@@ -347,7 +349,7 @@ rule.add "-A INPUT -m state --state ESTABLISHED,RELATED#{dos} -j ACCEPT"
 
 # Knocking
 config.knock.each do |knockline|
-	endport, first, second, third, fourth = knockline.split ":", knockline
+	endport, first, second, third, fourth = knockline.split ":"
 
 	(2..4).each do |d|
 		rule.add "-N #{endport}-INTO-PHASE#{d}"
