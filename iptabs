@@ -152,7 +152,7 @@ class Rule
 	def service_enable(proto, list)
 		iface, service_string = list.split "#"
         dos = ""
-        dos = " -m limit --limit #{@config.dos_protect}/minute --limit-burst #{Integer(@config.dos_protect) * 2}" if @config.dos_protect != nil
+        dos = " -m limit --limit #{@config.dos_protect}/minute --limit-burst #{Integer(@config.dos_protect) * 2}" unless @config.dos_protect.nil?
 		service_string.split(",").each do |dport|
             portspec = dport[/[a-zA-Z]/] ? dport : dport.sub(/-/,':')
 			add "-A INPUT #{((!iface[/^any$/]) ? "-i " + iface : "")} -p #{proto} --dport #{portspec}#{dos} -j ACCEPT"
