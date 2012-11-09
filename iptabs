@@ -154,7 +154,8 @@ class Rule
         dos = ""
         dos = " -m limit --limit #{@config.dos_protect}/minute --limit-burst #{Integer(@config.dos_protect) * 2}" if @config.dos_protect != nil
 		service_string.split(",").each do |dport|
-			add "-A INPUT #{((!iface[/^any$/]) ? "-i " + iface : "")} -p #{proto} --dport #{dport}#{dos} -j ACCEPT"
+            portspec = dport[/[a-zA-Z]/] ? dport : dport.sub(/-/,':')
+			add "-A INPUT #{((!iface[/^any$/]) ? "-i " + iface : "")} -p #{proto} --dport #{portspec}#{dos} -j ACCEPT"
 		end
 	end
 
