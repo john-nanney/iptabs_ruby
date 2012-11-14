@@ -233,10 +233,10 @@ def process_arguments(cfg, args)
             cfg.trusted_iface.push args.shift
         elsif cmd[/^throttle$/]
             usage "option throttle needs a numeric argument\n" if args.size < 1 || !args[0][/^[0-9]+$/]
-            cfg.dos_conn_protect = args.shift
+            cfg.dos_protect = args.shift
         elsif cmd[/^est-throttle$/]
             usage "option est-throttle needs a numeric argument\n" if args.size < 1 || !args[0][/^[0-9]+$/]
-            cfg.dos_protect = args.shift
+            cfg.dos_conn_protect = args.shift
         elsif cmd[/^blacklist$/]
             usage "option blacklist needs an argument\n" if args.size < 1
             args.shift.split(/,/).each { |toblock| cfg.blacklist.push toblock }
