@@ -172,6 +172,8 @@ Do *NOT* mix IPset and plain blocking. Although this will probably work it will 
 
 The IPSet syntax changed not too long ago, so be sure to use the newest version available. For example, Debian 6.0.6 does not have an up to date version, and the kernel module must be built by hand.
 
+Saving IPSet chains persistently does not appear to be present in a lot of distros. On Debian or Ubuntu based systems try the included iptables-persistent file.
+
 DOS/DDOS Protection
 -------------------
 
