@@ -63,6 +63,8 @@ def usage(*args)
 	print "\tBlacklist hosts and/or networks. Separate multiples with commas.\n"
 	print "--blacklist-file FILENAME\n"
 	print "\tBlacklist hosts and/or networks listed in FILENAME\n"
+	print "--use-set\n"
+	print "\tUse IPSet for blacklisting.\n"
 	print "--badguy SPEC[,SPEC...]\n"
 	print "\tBlock hosts and/or networks with existing firewall. Separate multiples with commas.\n"
 	print "--badguy-file FILENAME\n"
@@ -89,6 +91,7 @@ class GlobalData
 	attr_accessor :udp
 	attr_accessor :trusted_iface
 	attr_accessor :by_spec
+	attr_accessor :use_set
 	attr_accessor :blacklist
 	attr_accessor :knock
 	attr_accessor :no_knock_log
@@ -96,6 +99,7 @@ class GlobalData
 	attr_accessor :dump_to
 	attr_accessor :dos_protect
 	attr_accessor :dos_conn_protect
+	attr_accessor :rule
 
 	def initialize
 		# Booleans
@@ -111,6 +115,7 @@ class GlobalData
 		@no_drop_finscans = false
 		@clear_only = false
 		@no_knock_log = false
+		@use_set = false
 
 		# Arrays
 		@tcp = Array.new
@@ -123,6 +128,9 @@ class GlobalData
 		# Strings
 		@interface = "any"
 		@dump_to = nil
+
+		# Rule object
+		@rule = nil
 	end
 end
 
@@ -159,6 +167,10 @@ class Rule
 		end
 	end
 
+	def ipset(what)
+	    return output "ipset ", what
+	end
+
 	private
 
 	def output(which, what)
@@ -172,13 +184,40 @@ class Rule
 
 end
 
-def block_badguy(toblock)
-    if toblock[/:/]
-        system "ip6tables -A blacklist -s #{toblock} -j DROP"
-    else
-        system "iptables -A blacklist -s #{toblock} -j DROP"
+def block_badguy(toblock, config)
+    use_set = false
+
+    if config != nil
+	use_set = config.use_set
+	if config.rule != nil
+	    rule = config.rule
+	end
     end
-    puts "Blacklisted #{toblock}"
+
+    if toblock[/:/]
+	if use_set
+	    cmd, args = [ "ipset", "add blacklist #{toblock}" ]
+	else
+	    cmd, args = [ "ip6tables", "-A blacklist -s #{toblock} -j DROP" ]
+	end
+    else
+	if use_set
+	    cmd, args = [ "ipset", "add blacklist #{toblock}" ]
+	else
+	    cmd, args =  [ "iptables", "-A blacklist -s #{toblock} -j DROP" ]
+	end
+    end
+
+    if rule != nil
+	if use_set
+	    rule.ipset args
+	else
+	    rule.add args
+	end
+    else
+	system "#{cmd} #{args}"
+	puts "Blacklisted #{toblock}"
+    end
 end
 
 def process_arguments(cfg, args)
@@ -237,6 +276,8 @@ def process_arguments(cfg, args)
         elsif cmd[/^est-throttle$/]
             usage "option est-throttle needs a numeric argument\n" if args.size < 1 || !args[0][/^[0-9]+$/]
             cfg.dos_conn_protect = args.shift
+        elsif cmd[/^use-set$/]
+	    cfg.use_set = true
         elsif cmd[/^blacklist$/]
             usage "option blacklist needs an argument\n" if args.size < 1
             args.shift.split(/,/).each { |toblock| cfg.blacklist.push toblock }
@@ -252,7 +293,7 @@ def process_arguments(cfg, args)
             end
         elsif cmd[/^badguy$/]
             usage "option badguy needs an argument\n" if args.size < 1
-            args.shift.split(/,/).each { |toblock| block_badguy toblock }
+            args.shift.split(/,/).each { |toblock| block_badguy toblock, cfg }
             exit 0
         elsif cmd[/^badguy-file$/]
             usage "option badguy-file needs an argument\n" if args.size < 1
@@ -261,7 +302,7 @@ def process_arguments(cfg, args)
             end
             File.open(args.shift, "r") do |infile|
                 while (line = infile.gets)
-                    line.chomp.split(/,/).each { |toblock| block_badguy toblock } if line.size > 1 && !line[/^#/]
+                    line.chomp.split(/,/).each { |toblock| block_badguy toblock, cfg } if line.size > 1 && !line[/^#/]
                 end
             end
             exit 0
@@ -292,6 +333,7 @@ config = GlobalData.new
 process_arguments config, ARGV
 
 rule = Rule.new(config)
+config.rule = rule
 
 # Clear existing tables
 rule.add("-F").add("-P INPUT ACCEPT").add("-P OUTPUT ACCEPT")
@@ -324,13 +366,14 @@ rule.add "-N blacklist"
 rule.add "-A INPUT -j blacklist"
 rule.add "-A OUTPUT -j blacklist"
 
-config.blacklist.each do |drop|
-    if drop[/:/]
-        rule.add_ipv6 "-A blacklist -s #{drop} -j DROP"
-    else
-        rule.add_ipv4 "-A blacklist -s #{drop} -j DROP"
-    end
+if config.use_set
+    rule.add "-A blacklist -m set --match-set blacklist src -j DROP"
+    rule.add "-A blacklist -m set --match-set blacklist dst -j DROP"
+    rule.ipset "create blacklist hash:net"
+    rule.ipset "flush blacklist"
 end
+
+config.blacklist.each { |drop| block_badguy drop, config }
 
 # Protect from ping floods
 rule.add "-A INPUT -p icmp -m limit --limit 2/second --limit-burst 3 -j ACCEPT" unless config.drop_ping
