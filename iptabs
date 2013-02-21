@@ -183,7 +183,7 @@ end
 
 def process_arguments(cfg, args)
     while args.size > 0
-        cmd = args.shift.sub(/^--/, '')
+        cmd = args.shift.sub(/^-+/, '')
 
         if cmd[/^enable-tcp$/]
             usage "option enable-tcp needs an argument\n" if args.size < 1
