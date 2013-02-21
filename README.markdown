@@ -158,6 +158,20 @@ A file with a list of addresses and/or networks to block can be specified. The f
 
     iptabs --badguy-file list.txt
 
+Blacklisting can also use IPSet for faster lookups. This option should be used if a large blacklist table is expected.
+
+    iptabs --use-set --blacklist 192.168.1.1/32
+
+The `--blacklist` option need not be present, using `--use-set` will create an empty set ready to be filled dynamically.
+
+Make sure to specify that IPSet is in use when adding dynamically.
+
+    iptabs --use-set --badguy-file list.txt
+
+Do *NOT* mix IPset and plain blocking. Although this will probably work it will make maintenance difficult.
+
+The IPSet syntax changed not too long ago, so be sure to use the newest version available. For example, Debian 6.0.6 does not have an up to date version, and the kernel module must be built by hand.
+
 DOS/DDOS Protection
 -------------------
 
