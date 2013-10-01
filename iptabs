@@ -3,8 +3,14 @@
 # This software is public domain and has no express or implied warranty.
 
 def usage(*args)
-	print *args
-	print "\n"
+	unless args.nil?
+	    if args.class == Array
+		print args.join(" ")
+	    else
+		print args
+	    end
+	    print "\n"
+	end
 	print "Set up the firewall on a Linux server. If no services are specified only SSH is allowed. Ping flood protection is enabled unless --drop-ping is specified.\n"
 	print "\n"
 	print "Usage: iptabs.pl [ --help ] [ --enable-tcp SERVICELIST ] [ --enable-udp UDPSERVICELIST ] [ OPTIONS ]\n"
@@ -53,6 +59,12 @@ def usage(*args)
 	print "\tJust clear the existing firewall rules and exit.\n"
 	print "--trusted-iface IFACE[,IFACEx ...]\n"
 	print "\tMark the interface[s] as trusted, permitting all traffic. Loopback is automatically trusted, so do not add it with this option.\n"
+	print "--nat INTERNAL_INTERFACE:EXTERNAL_INTERFACE\n"
+	print "\tSpecify NAT routing support\n"
+	print "--translocal internal_iface:from_port:to_port\n"
+	print "\tSpecify transparent proxy to service running on the firewall\n"
+	print "--transremote internal_iface:local_network:from_port:remote_addr:to_port\n"
+	print "\tSpecify transparent proxy to service running on separate server\n"
 	print "--drop\n"
 	print "\tSpecify hosts or networks that should be dropped. Use multiple times, with IPv4 or IPv6\n"
 	print "--throttle NUM\n"
@@ -100,6 +112,10 @@ class GlobalData
 	attr_accessor :dos_protect
 	attr_accessor :dos_conn_protect
 	attr_accessor :rule
+	attr_accessor :blacklist_filename
+	attr_accessor :nat
+	attr_accessor :translocal
+	attr_accessor :transremote
 
 	def initialize
 		# Booleans
@@ -124,13 +140,18 @@ class GlobalData
 		@by_spec = Array.new
 		@blacklist = Array.new
 		@knock = Array.new
+		@translocal = Array.new
+		@transremote = Array.new
 
 		# Strings
 		@interface = "any"
 		@dump_to = nil
+		@blacklist_filename = nil
+		@nat = nil
 
 		# Rule object
 		@rule = nil
+
 	end
 end
 
@@ -187,9 +208,9 @@ end
 def block_badguy(toblock, config)
     use_set = false
 
-    if config != nil
+    unless config.nil?
 	use_set = config.use_set
-	if config.rule != nil
+	unless config.rule.nil?
 	    rule = config.rule
 	end
     end
@@ -208,7 +229,7 @@ def block_badguy(toblock, config)
 	end
     end
 
-    if rule != nil
+    unless rule. nil?
 	if use_set
 	    rule.ipset args
 	else
@@ -283,18 +304,20 @@ def process_arguments(cfg, args)
             args.shift.split(/,/).each { |toblock| cfg.blacklist.push toblock }
         elsif cmd[/^blacklist-file$/]
             usage "option blacklist-file needs an argument\n" if args.size < 1
-            if !File::exists?(args[0])
-                usage "File #{args[0]} does not exist."
-            end
-            File.open(args.shift, "r") do |infile|
-                while (line = infile.gets)
-                    line.chomp.split(/,/).each { |badguy| cfg.blacklist.push badguy } if line.size > 1 && !line[/^#/]
-                end
-            end
+	    cfg.blacklist_filename = args.shift
         elsif cmd[/^badguy$/]
             usage "option badguy needs an argument\n" if args.size < 1
             args.shift.split(/,/).each { |toblock| block_badguy toblock, cfg }
             exit 0
+        elsif cmd[/^nat$/]
+            usage "option nat needs an argument\n" if args.size < 1 || !args[0][/^[a-z]+[0-9]+:[a-z]+[0-9]+$/]
+	    cfg.nat = args.shift;
+        elsif cmd[/^translocal$/]
+            usage "option translocal needs an argument\n" if args.size < 1 || !args[0][/^[a-z]+[0-9]+:[0-9]+:[0-9]+/]
+            args.shift.split(/,/).each { |tolocal| cfg.translocal.push tolocal }
+        elsif cmd[/^transremote$/]
+            usage "option transremote needs an argument\n" if args.size < 1 || !args[0][/^[a-z]+[0-9]+:[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+:[0-9]+:[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+/]
+            args.shift.split(/,/).each { |toremote| cfg.transremote.push toremote }
         elsif cmd[/^badguy-file$/]
             usage "option badguy-file needs an argument\n" if args.size < 1
             if !File::exists?(args[0])
@@ -343,6 +366,8 @@ end if config.dump_to.nil?
 
 exit 0 if config.clear_only
 
+rule.add("-P FORWARD ACCEPT") unless config.nat.nil?
+
 # Clear out existing tables, unless writing to a dump file
 IO.foreach("|iptables -S") do |line|
 	rule.add("iptables -X #{line[3..-2]}\n").add("iptables -X #{line[3..-2]}\n") if line[/^-N\s/]
@@ -363,14 +388,23 @@ config.trusted_iface.unshift "lo"
 config.trusted_iface.each { |iface| rule.add "-A INPUT -i #{iface} -j ACCEPT" }
 
 rule.add "-N blacklist"
-rule.add "-A INPUT -j blacklist"
-rule.add "-A OUTPUT -j blacklist"
 
 if config.use_set
-    rule.add "-A blacklist -m set --match-set blacklist src -j DROP"
-    rule.add "-A blacklist -m set --match-set blacklist dst -j DROP"
     rule.ipset "create blacklist hash:net"
     rule.ipset "flush blacklist"
+    rule.add "-A blacklist -m set --match-set blacklist src -j DROP"
+end
+
+unless config.blacklist_filename.nil?
+    if File::exists?(config.blacklist_filename)
+	File.open(config.blacklist_filename, "r") do |infile|
+	    while (line = infile.gets)
+		line.chomp.split(/,/).each { |badguy| config.blacklist.push badguy } if line.size > 1 && !line[/^#/]
+	    end
+	end
+    else
+	print "Warning: Blacklist file #{config.blacklist_filename} does not exist, so not loading it."
+    end
 end
 
 config.blacklist.each { |drop| block_badguy drop, config }
@@ -392,10 +426,35 @@ rule.add("-A INPUT -p tcp --tcp-flags ALL NONE -m limit --limit 5/m --limit-burs
 
 # Protect established connections from DOS/DDOS
 dos = ""
-dos = " -m limit --limit #{config.dos_conn_protect}/second --limit-burst #{Integer(config.dos_conn_protect) * 4}" if config.dos_conn_protect != nil
+dos = " -m limit --limit #{config.dos_conn_protect}/second --limit-burst #{Integer(config.dos_conn_protect) * 4}" unless config.dos_conn_protect.nil?
 
 # Accept anything we established
 rule.add "-A INPUT -m state --state ESTABLISHED,RELATED#{dos} -j ACCEPT"
+
+# Add rules for NAT (IPv4 only)
+unless config.nat.nil?
+    nat_int, nat_ext = config.nat.split(/:/)
+    rule.add_ipv4 "-t nat -A POSTROUTING -o #{nat_ext} -j MASQUERADE"
+    rule.add_ipv4 "-A FORWARD -i #{nat_ext} -o #{nat_int} -m state --state RELATED,ESTABLISHED -j ACCEPT"
+    rule.add_ipv4 "-A FORWARD -i #{nat_int} -o #{nat_ext} -j ACCEPT"
+end
+
+# Add rules for local transparent proxy
+config.translocal.each do |tlocal|
+    internal_iface, from_port, to_port = tlocal.split(/:/)
+    rule.add_ipv4 "-t nat -A PREROUTING -i #{internal_iface} -p tcp --dport #{from_port} -j REDIRECT --to-port #{to_port}"
+end
+
+# Add rules for remote transparent proxy
+config.transremote.each do |tremote|
+    internal_iface, local_network, from_port, remote_addr, to_port = tremote.split(/:/)
+    rule.add_ipv4 "-t nat -A PREROUTING -i #{internal_iface} -s ! #{remote_addr} -p tcp --dport #{from_port} -j DNAT --to #{remote_addr}:#{to_port}"
+    rule.add_ipv4 "-t nat -A POSTROUTING -o #{internal_iface} -s #{local_network} -d #{remote_addr} -j MASQUERADE"
+    rule.add_ipv4 "-A FORWARD -s #{local_network} -d #{remote_addr} -i #{internal_iface} -o #{internal_iface} -p tcp --dport #{to_port} -j ACCEPT"
+end
+
+# Check for blacklisted hosts, but only after the ESTABLISHED,RELATED check
+rule.add "-A INPUT -j blacklist"
 
 # Knocking
 config.knock.each do |knockline|
@@ -421,7 +480,7 @@ config.knock.each do |knockline|
 end
 
 # SSHGuard
-rule.add("-N sshguard").add("-A INPUT -j sshguard").add("-A OUTPUT -j sshguard") if config.sshguard
+rule.add("-N sshguard").add("-A INPUT -j sshguard") if config.sshguard
 rule.add("-N FWKNOP_INPUT").add("-A INPUT -j FWKNOP_INPUT") if config.fwknop
 
 # By spec
