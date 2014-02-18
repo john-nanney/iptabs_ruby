@@ -125,6 +125,27 @@ Example of multiple trusted interfaces:
 
 	iptabs --trusted-iface eth1,eth2,eth4
 
+NAT/IPSec
+---------
+
+IPSec and NAT are supported, in any combination.
+
+To enable NAT from private network on eth0 to public eth1
+
+    iptabs --nat eth0:eth1
+
+To enable IPSec tunneling
+
+    iptabs --ipsec
+
+To enable IPSec tunneling with NAT on the private network (Note the reversal of public eth1 and private eth0)
+
+    iptabs --ipsec --nat eth1:eth0
+
+For strongswan with NAT
+
+    iptabs --ipsec --nat eth1:eth0 --enable-udp 500,4500
+
 Untrusted Networks/Addresses
 ----------------------------
 
