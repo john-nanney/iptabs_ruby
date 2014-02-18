@@ -61,6 +61,8 @@ def usage(*args)
 	print "\tMark the interface[s] as trusted, permitting all traffic. Loopback is automatically trusted, so do not add it with this option.\n"
 	print "--nat INTERNAL_INTERFACE:EXTERNAL_INTERFACE\n"
 	print "\tSpecify NAT routing support\n"
+	print "--ipsec\n"
+	print "\tAllow IPSec protocol support\n"
 	print "--translocal internal_iface:from_port:to_port\n"
 	print "\tSpecify transparent proxy to service running on the firewall\n"
 	print "--transremote internal_iface:local_network:from_port:remote_addr:to_port\n"
@@ -116,6 +118,7 @@ class GlobalData
 	attr_accessor :nat
 	attr_accessor :translocal
 	attr_accessor :transremote
+	attr_accessor :ipsec
 
 	def initialize
 		# Booleans
@@ -132,6 +135,7 @@ class GlobalData
 		@clear_only = false
 		@no_knock_log = false
 		@use_set = false
+		@ipsec = false
 
 		# Arrays
 		@tcp = Array.new
@@ -318,6 +322,8 @@ def process_arguments(cfg, args)
         elsif cmd[/^transremote$/]
             usage "option transremote needs an argument\n" if args.size < 1 || !args[0][/^[a-z]+[0-9]+:[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+:[0-9]+:[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+/]
             args.shift.split(/,/).each { |toremote| cfg.transremote.push toremote }
+        elsif cmd[/^ipsec$/]
+	    cfg.ipsec = true
         elsif cmd[/^badguy-file$/]
             usage "option badguy-file needs an argument\n" if args.size < 1
             if !File::exists?(args[0])
@@ -372,6 +378,10 @@ rule.add("-P FORWARD ACCEPT") unless config.nat.nil?
 IO.foreach("|iptables -S") do |line|
 	rule.add("iptables -X #{line[3..-2]}\n").add("iptables -X #{line[3..-2]}\n") if line[/^-N\s/]
 end unless config.dump_to
+
+if config.ipsec
+	rule.add "-A INPUT -p esp -j ACCEPT"
+end
 
 unless config.no_drop_fragments
 	# IPv4 fragment drop is pretty simple
@@ -496,6 +506,7 @@ config.tcp.each { |service| rule.service_enable "tcp", service }
 config.udp.each { |service| rule.service_enable "udp", service }
 
 # Logging for PSAD and drop everything else
-rule.add("-A INPUT -j LOG").add("-A FORWARD -j LOG").add("-A INPUT -j DROP")
+rule.add("-A INPUT -j LOG").add("-A INPUT -j DROP")
+add("-A FORWARD -j LOG") unless config.isec
 
 exit 0
