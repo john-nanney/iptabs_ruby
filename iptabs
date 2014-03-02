@@ -507,6 +507,6 @@ config.udp.each { |service| rule.service_enable "udp", service }
 
 # Logging for PSAD and drop everything else
 rule.add("-A INPUT -j LOG").add("-A INPUT -j DROP")
-add("-A FORWARD -j LOG") unless config.isec
+rule.add("-A FORWARD -j LOG") unless config.ipsec
 
 exit 0
