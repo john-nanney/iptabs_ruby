@@ -208,6 +208,23 @@ The number used is the limit per minute for new connections. The burst rate for 
 
 The number used is the limit per second for established connections. The burst rate for established connections is two times the specified limit per second.
 
+OUTPUT Chain Processing
+-----------------------
+
+Normally the OUTPUT chain is set to send all packets, and this should be the default for a desktop or laptop. In the case of a server the OUTPUT chain probably should be filtered.
+
+*Great care should be used with this option.* The trusted interface mechanism will apply to the OUTPUT chain as well. The chain will also respect the blacklist and SSHGuard (if enabled).
+
+    iptabs --output-tcp ssh,http,443,8000-8999 --enable-udp 53
+
+This will trigger output filtering, enable outgoing connections to SSH, HTTP, HTTPS, and the range 8000 through 8999. Also allowing DNS lookups through UDP port 53 (note that the inbound DNS is not enabled, therefoe DNS will fail).
+
+    iptabs --enable-tcp ssh --trusted-iface eth1 --outforce
+
+This will configure a typical "jump server" that can receive SSH, but allow anything in or out of eth1. Note that attempting to SSH out on any other interface (eth0) will fail. the `--outforce` option will trigger OUTPUT chain processing without enabling any outbound services.
+
+The `--outspec` option will specify rules just like --by-spec for the output chain.
+
 Firewall Files
 --------------
 

@@ -83,6 +83,14 @@ def usage(*args)
     print "\tBlock hosts and/or networks with existing firewall. Separate multiples with commas.\n"
     print "--badguy-file FILENAME\n"
     print "\tBlock hosts and/or networks from a file, without reloading firewall.\n"
+    print "--output-tcp PORTLIST\n"
+    print "\tAllow TCP ports through output chain\n"
+    print "--output-udp PORTLIST\n"
+    print "\tAllow UDP ports through output chain\n"
+    print "--outforce\n"
+    print "\tForce output processing without enabling any services\n"
+    print "--outspec SPEC\n"
+    print "\tAllow by spec in output chain"
     print "--file FILENAME\n"
     print "\tRead firewall commands from FILENAME\n"
     print "\n"
@@ -119,6 +127,9 @@ class GlobalData
     attr_accessor :translocal
     attr_accessor :transremote
     attr_accessor :ipsec
+    attr_accessor :outbound
+    attr_accessor :outforce
+    attr_accessor :outspec
 
     def initialize
 	# Booleans
@@ -136,6 +147,7 @@ class GlobalData
 	@no_knock_log = false
 	@use_set = false
 	@ipsec = false
+	@outforce = false
 
 	# Arrays
 	@tcp = Array.new
@@ -146,6 +158,8 @@ class GlobalData
 	@knock = Array.new
 	@translocal = Array.new
 	@transremote = Array.new
+	@outbound = Array.new
+	@outspec = Array.new
 
 	# Strings
 	@interface = "any"
@@ -182,13 +196,13 @@ class Rule
 	return add_ipv4(what).add_ipv6(what)
     end
 
-    def service_enable(proto, list)
+    def service_enable(chain, proto, list, dir_in = true)
 	iface, service_string = list.split "#"
 	dos = ""
 	dos = " -m limit --limit #{@config.dos_protect}/minute --limit-burst #{Integer(@config.dos_protect) * 2}" unless @config.dos_protect.nil?
 	service_string.split(",").each do |dport|
 	    portspec = dport[/[a-zA-Z]/] ? dport : dport.sub(/-/,':')
-	    add "-A INPUT #{((!iface[/^any$/]) ? "-i " + iface : "")} -p #{proto} --dport #{portspec}#{dos} -j ACCEPT"
+	    add "-A #{chain} #{((!iface[/^any$/]) ? (dir_in ? "-i " : "-o ") + iface : "")} -p #{proto} --dport #{portspec}#{dos} -j ACCEPT"
 	end
     end
 
@@ -324,6 +338,19 @@ def process_arguments(cfg, args)
 	    args.shift.split(/,/).each { |toremote| cfg.transremote.push toremote }
 	elsif cmd[/^ipsec$/]
 	    cfg.ipsec = true
+	elsif cmd[/^output-tcp$/]
+	    usage "option by-spec needs an argument\n" if args.size < 1
+	    args.shift.split(/,/).each { |outtcp| cfg.outbound.push "tcp;#{cfg.interface}##{outtcp}" }
+	    cfg.outforce = true
+	elsif cmd[/^output-udp$/]
+	    usage "option by-spec needs an argument\n" if args.size < 1
+	    args.shift.split(/,/).each { |outudp| cfg.outbound.push "udp;#{cfg.interface}##{outudp}" }
+	    cfg.outforce = true
+	elsif cmd[/^outforce$/]
+	    cfg.outforce = true
+	elsif cmd[/^outspec$/]
+	    usage "option by-spec needs an argument\n" if args.size < 1
+	    cfg.outspec.push args.shift.gsub(/:/, ';').gsub(/-/, ':')
 	elsif cmd[/^badguy-file$/]
 	    usage "option badguy-file needs an argument\n" if args.size < 1
 	    if !File::exists?(args[0])
@@ -500,13 +527,33 @@ config.by_spec.each do |specline|
 end
 
 # TCP services
-config.tcp.each { |service| rule.service_enable "tcp", service }
+config.tcp.each { |service| rule.service_enable "INPUT", "tcp", service }
 
 # UDP Sevices
-config.udp.each { |service| rule.service_enable "udp", service }
+config.udp.each { |service| rule.service_enable "INPUT", "udp", service }
 
 # Logging for PSAD and drop everything else
 rule.add("-A INPUT -j LOG").add("-A INPUT -j DROP")
 rule.add("-A FORWARD -j LOG") unless config.ipsec
+
+# Optional OUTPUT chain processing
+if(config.outbound.size > 0 || config.outforce)
+    config.trusted_iface.each { |iface| rule.add "-A OUTPUT -i #{iface} -j ACCEPT" }
+    rule.add("-A OUTPUT -j blacklist")
+    rule.add("-A sshguard") if config.sshguard
+    rule.add "-A OUTPUT -m state --state ESTABLISHED,RELATED#{dos} -j ACCEPT"
+    config.outbound.each do |outspec|
+	proto, portspec = outspec.split(/;/)
+	rule.service_enable "OUTPUT", proto, portspec, false
+    end
+
+    # Output spec
+    config.outspec.each do |outspecline|
+	nh, protocol, ports = outspecline.split ";"
+	ports.split(",").each { |p| rule.add_ipv4 "-A OUTPUT -p #{protocol} -d #{nh} --dport #{p} -j ACCEPT" }
+    end
+
+    rule.add("-A OUTPUT -j LOG").add("-A OUTPUT -j DROP")
+end
 
 exit 0
