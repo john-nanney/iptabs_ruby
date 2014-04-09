@@ -538,9 +538,10 @@ rule.add("-A FORWARD -j LOG") unless config.ipsec
 
 # Optional OUTPUT chain processing
 if(config.outbound.size > 0 || config.outforce)
-    config.trusted_iface.each { |iface| rule.add "-A OUTPUT -i #{iface} -j ACCEPT" }
+    config.trusted_iface.each { |iface| rule.add "-A OUTPUT -o #{iface} -j ACCEPT" }
     rule.add("-A OUTPUT -j blacklist")
     rule.add("-A sshguard") if config.sshguard
+    rule.add "-A OUTPUT -p icmp -m limit --limit 2/second --limit-burst 3 -j ACCEPT" unless config.drop_ping
     rule.add "-A OUTPUT -m state --state ESTABLISHED,RELATED#{dos} -j ACCEPT"
     config.outbound.each do |outspec|
 	proto, portspec = outspec.split(/;/)
