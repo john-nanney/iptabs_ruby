@@ -222,7 +222,7 @@ class GlobalData
 	@cluster_proto = "tcp"
 	@cluster_nodes = ""
 	@cluster_localnode = ""
-	@cluster_hashmode = "sourceip-sourceport"
+	@cluster_hashmode = "sourceip"
 	@cluster_mac = "01:02:03:04:05:06"
 
 	# Rule object
