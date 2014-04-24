@@ -225,6 +225,47 @@ This will configure a typical "jump server" that can receive SSH, but allow anyt
 
 The `--outspec` option will specify rules just like --by-spec for the output chain.
 
+Load Balancing Cluster Support
+------------------------------
+
+Rules for cluster support can be added.
+
+The minimum specification consists of a virtual IP, number of nodes in the cluster, local node number, and the interface:
+
+    iptabs --interface eth0 --cluster-ip 10.1.1.10 --cluster-nodes 10 --cluster-local 3 --cluster http
+
+The --cluster option must be last. It takes a list of ports or services separated by commas. Ranges are not allowed.
+
+Optionally the virtual MAC and hash type may be specified:
+
+    iptabs --interface eth0 --cluster-ip 10.1.1.10 --cluster-nodes 10 --cluster-local 3 --cluster-mac aa:bb:cc:dd:ee --cluster-hashmode sourceip-sourceport --cluster http
+
+The option `--cluster-mac` defaults to `01:02:03:04:05:06` and the option `--cluster-hashmode` defaults to `sourceip`
+
+
+Multiple cluster specifications are allowed, but this is not recommended.
+
+    iptabs --interface eth0 --cluster-ip 10.1.1.10 --cluster-nodes 10 --cluster-local 3 --cluster http,https --interface eth1 --cluster-ip 10.1.2.10 --cluster-nodes 10 --cluster-local 3 --cluster-mac aa:bb:cc:dd:ee --cluster http,https
+
+This is far easier using `--file` (see below for details)
+
+    # Clustering web server
+    interface eth0
+    enable-tcp http,https
+    cluster-ip 10.1.1.10
+    cluster-nodes 10
+    cluster-local 3
+    cluster http,https
+
+IPv6 addresses are acceptable with `--cluster-ip` but this is not well tested.
+
+**CAVEATS**
+
+* The service list specified must also be allowed by the firewall itself. This is probably best done **after** the interface specification. See the example above.
+* Neither failover nor recovery is triggered at the firewall level, The virtual IP address must be assigned to the device (typically as an alias), this is not done in the code.
+* No state information is balanced, this must be done by the application layer.
+* Do not use hostnames instead of IP addresses for `--cluster-ip`
+
 Firewall Files
 --------------
 
@@ -234,14 +275,16 @@ Here is an example firewall file:
 
     # Web server firewall
     sshguard
-    enable-tcp 22,80,443
+    enable-tcp ssh,http,https
     blacklist 172.168.0.0/16,10.0.0.0/8
 
 This is equivalent to the command line
 
-    iptabs --sshguard --enable-tcp 22,80,443 --blacklist 172.168.0.0/16,10.0.0.0/8
+    iptabs --sshguard --enable-tcp ssh,http,https --blacklist 172.168.0.0/16,10.0.0.0/8
 
 Enjoy!
+
+- - -
 
 About
 -----
