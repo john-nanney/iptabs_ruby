@@ -247,7 +247,7 @@ Multiple cluster specifications are allowed, but this is not recommended.
 
     iptabs --interface eth0 --cluster-ip 10.1.1.10 --cluster-nodes 10 --cluster-local 3 --cluster http,https --interface eth1 --cluster-ip 10.1.2.10 --cluster-nodes 10 --cluster-local 3 --cluster-mac aa:bb:cc:dd:ee --cluster http,https
 
-This is far easier using `--file` (see below **Firewall Files** for details)
+This is far easier using `--file` (see **Firewall Files** below for details)
 
     # Clustering web server
     interface eth0
@@ -262,7 +262,8 @@ IPv6 addresses are acceptable with `--cluster-ip` but this is not well tested.
 **CAVEATS**
 
 * The service list specified must also be allowed by the firewall itself. This is probably best done **after** the interface specification. See the example above.
-* Neither failover nor recovery is triggered at the firewall level, The virtual IP address must be assigned to the device (typically as an alias), this is not done in the code.
+* Neither failover nor recovery is triggered at the firewall level.
+* The virtual IP address must be assigned to the device (typically as an alias), this is not done in the code.
 * No state information is balanced, this must be done by the application layer.
 * Do not use hostnames instead of IP addresses for `--cluster-ip`
 
