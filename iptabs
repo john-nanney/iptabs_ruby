@@ -90,11 +90,55 @@ def usage(*args)
     print "--outforce\n"
     print "\tForce output processing without enabling any services\n"
     print "--outspec SPEC\n"
-    print "\tAllow by spec in output chain"
+    print "\tAllow by spec in output chain\n"
+    print "--cluster-ip VIRTUAL_ADDRESS\n"
+    print "\tSpecify the cluster address in either IPv4 or IPv6 notation (must not be a hostname or FQDN)\n"
+    print "--cluster-mac VIRTUAL_MAC_ADDRESS\n"
+    print "\tOptionall specify a virtual MAC address (defaults to 01:02:03:04:05:06)\n"
+    print "--cluster-proto [ tcp | udp ]\n"
+    print "\tSpecify which protocol to use (defaults to tcp)\n"
+    print "--cluster-nodes TOTAL_NUMBER_OF_NODES\n"
+    print "\tSpecify total number of nodes in the cluster\n"
+    print "--cluster-local LOCAL_NODE_NUMBER\n"
+    print "\tSpecify the local node number (start at 1)\n"
+    print "--cluster-hashmode HASHMODE\n"
+    print "\tSpecify the hash mode (default to sourceip)\n"
+    print "--cluster SERVICELIST\n"
+    print "\tComma separate list of ports to cluster, last argument in a cluster definition\n"
     print "--file FILENAME\n"
     print "\tRead firewall commands from FILENAME\n"
     print "\n"
     exit 1
+end
+
+class Cluster
+    attr_accessor :vip
+    attr_accessor :ports
+    attr_accessor :proto
+    attr_accessor :iface
+    attr_accessor :hashmode
+    attr_accessor :mac
+    attr_accessor :nodes
+    attr_accessor :localnode
+
+    def initialize(
+	    iface,
+	    vip,
+	    ports,
+	    proto,
+	    nodes,
+	    localnode,
+	    hashmode,
+	    mac)
+	@iface = iface
+	@vip = vip
+	@ports = ports
+	@proto = proto
+	@nodes = nodes
+	@localnode = localnode
+	@hashmode = hashmode
+	@mac = mac
+    end
 end
 
 class GlobalData
@@ -130,6 +174,13 @@ class GlobalData
     attr_accessor :outbound
     attr_accessor :outforce
     attr_accessor :outspec
+    attr_accessor :cluster
+    attr_accessor :cluster_vip
+    attr_accessor :cluster_proto
+    attr_accessor :cluster_nodes
+    attr_accessor :cluster_localnode
+    attr_accessor :cluster_hashmode
+    attr_accessor :cluster_mac
 
     def initialize
 	# Booleans
@@ -160,12 +211,19 @@ class GlobalData
 	@transremote = Array.new
 	@outbound = Array.new
 	@outspec = Array.new
+	@cluster = Array.new
 
 	# Strings
 	@interface = "any"
 	@dump_to = nil
 	@blacklist_filename = nil
 	@nat = nil
+	@cluster_vip = ""
+	@cluster_proto = "tcp"
+	@cluster_nodes = ""
+	@cluster_localnode = ""
+	@cluster_hashmode = "sourceip-sourceport"
+	@cluster_mac = "01:02:03:04:05:06"
 
 	# Rule object
 	@rule = nil
@@ -210,6 +268,21 @@ class Rule
 	return output "ipset ", what
     end
 
+    def cluster(clust)
+
+	clust.ports.split(/,/).each do |cport|
+	    rulestr = "-I INPUT -d #{clust.vip} -i #{clust.iface} -p #{clust.proto} -m #{clust.proto} --dport #{cport} -j CLUSTERIP --new --hashmode #{clust.hashmode} --clustermac #{clust.mac} --total-nodes #{clust.nodes} --local-node #{clust.localnode}"
+
+	    if clust.vip[/:/]
+		self.add_ipv6 rulestr
+	    else
+		self.add_ipv4 rulestr
+	    end
+	end
+
+	return self
+    end
+
     private
 
     def output(which, what)
@@ -220,7 +293,6 @@ class Rule
 	end
 	return self
     end
-
 end
 
 def block_badguy(toblock, config)
@@ -266,91 +338,124 @@ def process_arguments(cfg, args)
 	if cmd[/^enable-tcp$/]
 	    usage "option enable-tcp needs an argument\n" if args.size < 1
 	    cfg.tcp.push cfg.interface + "#" + args.shift
+
 	elsif cmd[/^enable-udp$/]
 	    usage "option enable-udp needs an argument\n" if args.size < 1
 	    cfg.udp.push cfg.interface + "#" + args.shift
+
 	elsif cmd[/^interface$/]
 	    usage "option interface needs an argument\n" if args.size < 1
 	    cfg.interface = args.shift
+
 	elsif cmd[/^sshguard$/]
 	    cfg.sshguard = true
+
 	elsif cmd[/^fwknop$/]
 	    cfg.fwknop = true
+
 	elsif cmd[/^forward$/]
 	    cfg.forward = true
+
 	elsif cmd[/^drop-ipv6$/]
 	    cfg.drop_ipv6 = true
+
 	elsif cmd[/^drop-ping$/]
 	    cfg.drop_ping = true
+
 	elsif cmd[/^no-drop-null$/]
 	    cfg.no_drop_null = true
+
 	elsif cmd[/^no-drop-fragments$/]
 	    cfg.no_drop_fragments = true
+
 	elsif cmd[/^no-syn-protect$/]
 	    cfg.no_syn_protect = true
+
 	elsif cmd[/^no-drop-xmas$/]
 	    cfg.no_drop_xmas = true
+
 	elsif cmd[/^no-drop-finscans$/]
 	    cfg.no_drop_finscans = true
+
 	elsif cmd[/^knock$/]
 	    usage "option knock needs an argument\n" if args.size < 1
 	    cfg.knock.push args.shift
+
 	elsif cmd[/^no-knock-log$/]
 	    cfg.no_knock_log = true
+
 	elsif cmd[/^dump-to$/]
 	    usage "option dump-to needs an argument\n" if args.size < 1
 	    cfg.dump_to = args.shift
+
 	elsif cmd[/^by-spec$/]
 	    usage "option by-spec needs an argument\n" if args.size < 1
 	    usage "Specification is incorrect\n" unless args[0][/^[0-9.]+\/[0-9]+:[tu][dc]p:[0-9,-]+$/]
 	    cfg.by_spec.push args.shift.gsub(/:/, ';').gsub(/-/, ':')
+
 	elsif cmd[/^clear$/]
 	    cfg.clear_only = true
+
 	elsif cmd[/^trusted-iface$/]
 	    usage "option trusted-iface needs an argument\n" if args.size < 1
 	    cfg.trusted_iface.push args.shift
+
 	elsif cmd[/^throttle$/]
 	    usage "option throttle needs a numeric argument\n" if args.size < 1 || !args[0][/^[0-9]+$/]
 	    cfg.dos_protect = args.shift
+
 	elsif cmd[/^est-throttle$/]
 	    usage "option est-throttle needs a numeric argument\n" if args.size < 1 || !args[0][/^[0-9]+$/]
 	    cfg.dos_conn_protect = args.shift
+
 	elsif cmd[/^use-set$/]
 	    cfg.use_set = true
+
 	elsif cmd[/^blacklist$/]
 	    usage "option blacklist needs an argument\n" if args.size < 1
 	    args.shift.split(/,/).each { |toblock| cfg.blacklist.push toblock }
+
 	elsif cmd[/^blacklist-file$/]
 	    usage "option blacklist-file needs an argument\n" if args.size < 1
 	    cfg.blacklist_filename = args.shift
+
 	elsif cmd[/^badguy$/]
 	    usage "option badguy needs an argument\n" if args.size < 1
 	    args.shift.split(/,/).each { |toblock| block_badguy toblock, cfg }
 	    exit 0
+
 	elsif cmd[/^nat$/]
 	    usage "option nat needs an argument\n" if args.size < 1 || !args[0][/^[a-z]+[0-9]+:[a-z]+[0-9]+$/]
 	    cfg.nat = args.shift;
+
 	elsif cmd[/^translocal$/]
 	    usage "option translocal needs an argument\n" if args.size < 1 || !args[0][/^[a-z]+[0-9]+:[0-9]+:[0-9]+/]
 	    args.shift.split(/,/).each { |tolocal| cfg.translocal.push tolocal }
+
 	elsif cmd[/^transremote$/]
 	    usage "option transremote needs an argument\n" if args.size < 1 || !args[0][/^[a-z]+[0-9]+:[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+:[0-9]+:[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+/]
 	    args.shift.split(/,/).each { |toremote| cfg.transremote.push toremote }
+
 	elsif cmd[/^ipsec$/]
 	    cfg.ipsec = true
+
 	elsif cmd[/^output-tcp$/]
 	    usage "option by-spec needs an argument\n" if args.size < 1
 	    args.shift.split(/,/).each { |outtcp| cfg.outbound.push "tcp;#{cfg.interface}##{outtcp}" }
 	    cfg.outforce = true
+
 	elsif cmd[/^output-udp$/]
 	    usage "option by-spec needs an argument\n" if args.size < 1
 	    args.shift.split(/,/).each { |outudp| cfg.outbound.push "udp;#{cfg.interface}##{outudp}" }
 	    cfg.outforce = true
+
 	elsif cmd[/^outforce$/]
 	    cfg.outforce = true
+
 	elsif cmd[/^outspec$/]
 	    usage "option by-spec needs an argument\n" if args.size < 1
 	    cfg.outspec.push args.shift.gsub(/:/, ';').gsub(/-/, ':')
+
 	elsif cmd[/^badguy-file$/]
 	    usage "option badguy-file needs an argument\n" if args.size < 1
 	    if !File::exists?(args[0])
@@ -362,6 +467,65 @@ def process_arguments(cfg, args)
 		end
 	    end
 	    exit 0
+
+	elsif cmd[/^cluster-ip$/]
+	    usage "option #{cmd} needs an argument\n" if args.size < 1
+	    cfg.cluster_vip = args.shift
+
+	elsif cmd[/^cluster-mac$/]
+	    usage "option #{cmd} needs an argument\n" if args.size < 1
+	    cfg.cluster_mac = args.shift
+
+	elsif cmd[/^cluster-proto$/]
+	    usage "option #{cmd} needs an argument\n" if args.size < 1
+	    cfg.cluster_proto = args.shift
+
+	elsif cmd[/^cluster-nodes$/]
+	    usage "option #{cmd} needs an argument\n" if args.size < 1
+	    cfg.cluster_nodes = args.shift
+
+	elsif cmd[/^cluster-local$/]
+	    usage "option #{cmd} needs an argument\n" if args.size < 1
+	    cfg.cluster_localnode = args.shift
+
+	elsif cmd[/^cluster-hashmode$/]
+	    usage "option #{cmd} needs an argument\n" if args.size < 1
+	    cfg.cluster_hashmode = args.shift
+
+	elsif cmd[/^cluster$/]
+	    usage "option #{cmd} needs an argument\n" if args.size < 1
+
+	    cluster_ports = args.shift
+
+	    if cfg.cluster_nodes.length < 1
+		usage "Cluster must specify node count via --cluster-nodes\n"
+	    end
+
+	    if cfg.cluster_localnode.length < 1
+		usage "Cluster must specify local node via --cluster-local\n"
+	    end
+
+	    if cfg.cluster_vip.length < 1
+		usage "Cluster must specify virtual IP address via --cluster-ip\n"
+	    end
+
+	    if cfg.cluster_vip.length < 1
+		usage "Cluster must specify virtual IP address via --cluster-ip\n"
+	    end
+
+	    if cfg.interface[/^any$/]
+		usage "Cluster must specify an interface via --interface\n"
+	    end
+
+	    cfg.cluster.push Cluster.new(cfg.interface,
+					 cfg.cluster_vip,
+					 cluster_ports,
+					 cfg.cluster_proto,
+					 cfg.cluster_nodes,
+					 cfg.cluster_localnode,
+					 cfg.cluster_hashmode,
+					 cfg.cluster_mac)
+
 	elsif cmd[/^file$/]
 	    usage "option file needs an argument\n" if args.size < 1
 	    if !File::exists?(args[0])
@@ -374,6 +538,7 @@ def process_arguments(cfg, args)
 		end
 	    end
 	    process_arguments cfg, fileargs
+
 	else
 	    usage "Unrecognized option #{cmd}\n\n"
 	end
@@ -491,6 +656,7 @@ config.transremote.each do |tremote|
 end
 
 # Check for blacklisted hosts, but only after the ESTABLISHED,RELATED check
+# This prevents a type of DOS
 rule.add "-A INPUT -j blacklist"
 
 # Knocking
@@ -531,6 +697,12 @@ config.tcp.each { |service| rule.service_enable "INPUT", "tcp", service }
 
 # UDP Sevices
 config.udp.each { |service| rule.service_enable "INPUT", "udp", service }
+
+if config.cluster.size > 0
+    config.cluster.each { |clusterservice| rule.cluster clusterservice }
+    # Drop cluster martians
+    rule.add "-I INPUT -m state --state INVALID -j DROP"
+end
 
 # Logging for PSAD and drop everything else
 rule.add("-A INPUT -j LOG").add("-A INPUT -j DROP")
