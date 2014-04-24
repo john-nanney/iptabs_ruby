@@ -234,7 +234,7 @@ The minimum specification consists of a virtual IP, number of nodes in the clust
 
     iptabs --interface eth0 --cluster-ip 10.1.1.10 --cluster-nodes 10 --cluster-local 3 --cluster http
 
-The --cluster option must be last. It takes a list of ports or services separated by commas. Ranges are not allowed.
+The `--cluster` option must be last. It takes a list of ports or services separated by commas. Ranges are not allowed.
 
 Optionally the virtual MAC and hash type may be specified:
 
@@ -247,7 +247,7 @@ Multiple cluster specifications are allowed, but this is not recommended.
 
     iptabs --interface eth0 --cluster-ip 10.1.1.10 --cluster-nodes 10 --cluster-local 3 --cluster http,https --interface eth1 --cluster-ip 10.1.2.10 --cluster-nodes 10 --cluster-local 3 --cluster-mac aa:bb:cc:dd:ee --cluster http,https
 
-This is far easier using `--file` (see below for details)
+This is far easier using `--file` (see below **Firewall Files** for details)
 
     # Clustering web server
     interface eth0
