@@ -271,7 +271,7 @@ class Rule
     def cluster(clust)
 
 	clust.ports.split(/,/).each do |cport|
-	    rulestr = "-I INPUT -d #{clust.vip} -i #{clust.iface} -p #{clust.proto} -m #{clust.proto} --dport #{cport} -j CLUSTERIP --new --hashmode #{clust.hashmode} --clustermac #{clust.mac} --total-nodes #{clust.nodes} --local-node #{clust.localnode}"
+	    rulestr = "-A INPUT -d #{clust.vip} -i #{clust.iface} -p #{clust.proto} -m #{clust.proto} --dport #{cport} -j CLUSTERIP --new --hashmode #{clust.hashmode} --clustermac #{clust.mac} --total-nodes #{clust.nodes} --local-node #{clust.localnode}"
 
 	    if clust.vip[/:/]
 		self.add_ipv6 rulestr
@@ -692,17 +692,17 @@ config.by_spec.each do |specline|
     ports.split(",").each { |p| rule.add_ipv4 "-A INPUT -p #{protocol} -s #{nh} --dport #{p} -j ACCEPT" }
 end
 
+if config.cluster.size > 0
+    config.cluster.each { |clusterservice| rule.cluster clusterservice }
+    # Drop cluster martians
+    rule.add "-A INPUT -m state --state INVALID -j DROP"
+end
+
 # TCP services
 config.tcp.each { |service| rule.service_enable "INPUT", "tcp", service }
 
 # UDP Sevices
 config.udp.each { |service| rule.service_enable "INPUT", "udp", service }
-
-if config.cluster.size > 0
-    config.cluster.each { |clusterservice| rule.cluster clusterservice }
-    # Drop cluster martians
-    rule.add "-I INPUT -m state --state INVALID -j DROP"
-end
 
 # Logging for PSAD and drop everything else
 rule.add("-A INPUT -j LOG").add("-A INPUT -j DROP")
