@@ -1,3 +1,7 @@
+Moved
+=====
+
+This repository has been moved to https://gitlab.com/john-nanney/iptabs_ruby
 
 Easy Firewall Script
 ====================
